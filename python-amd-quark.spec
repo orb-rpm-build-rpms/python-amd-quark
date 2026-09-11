@@ -61,11 +61,11 @@ Summary:        %{summary}
 # upstream lists it only under [build-system].requires -- never in the runtime
 # metadata -- so the automatic dependency generator cannot emit it. Add it here.
 Requires:       python3dist(torch)
-# TODO: onnx is capped hard at >=1.21.0,<=1.22.0 by upstream. Confirm the base
-# repo / localrepo ship an onnx in that window; if not, it must be built too.
-# The remaining runtime deps (numpy>=2.0, onnxscript, onnxslim, pandas, plotly,
-# protobuf, psutil, pydantic, rich, scipy, sentencepiece, tqdm, zstandard,
-# evaluate, joblib, ninja) are emitted automatically by the dependency generator.
+# The ONNX and eval/plotting deps are trimmed from requirements.txt in %%prep (see
+# there), since vLLM uses only quark's PyTorch path. The remaining runtime deps
+# (numpy>=2.0, joblib, ninja, pandas, protobuf, psutil, pydantic, rich, scipy,
+# sentencepiece, tqdm, zstandard) are all in the F44 base and are emitted
+# automatically by the dependency generator from the wheel metadata.
 
 %description -n python3-%{pypi_name}
 %{desc}
@@ -83,6 +83,19 @@ sed -i 's/requires-python = ">=3.11,<3.14"/requires-python = ">=3.11,<3.15"/' py
 #    path and skips compiling the optional _C extension -- producing the same
 #    pure-Python wheel AMD publishes. (torch is still a runtime Requires above.)
 sed -i '/^\s*"torch>=2\.2\.0",\s*$/d' pyproject.toml
+
+# 3) Trim quark's ONNX-quantization and accuracy-evaluation dependencies. quark
+#    serves two independent halves -- PyTorch quantization and ONNX quantization
+#    -- but its pyproject reads the whole flat requirements.txt as install_requires
+#    (dependencies = {file = ["requirements.txt"]}). vLLM only imports quark.torch
+#    (the mx kernel, quantization.utils, utils.pack, hw_emulation), which loads
+#    none of these, so drop the ONNX toolchain (onnx, onnxscript, onnxslim) and the
+#    eval/plotting deps (evaluate, plotly). This keeps them out of both the build
+#    root and the runtime Requires, avoiding several heavy-to-package deps
+#    (onnxscript/onnxslim pull further onnx/onnxruntime chains) that quark's torch
+#    path does not need. Editing requirements.txt covers both because the metadata
+#    is generated from it.
+sed -i -E '/^(evaluate|onnx|onnxscript|onnxslim|plotly)([[:space:]]|[<>=!~;,#]|$)/d' requirements.txt
 
 # QUARK_RELEASE=1 makes setup.py's get_version() emit version.txt verbatim
 # (0.12.post1) instead of appending a "+<git-hash>" local segment. It must be set
@@ -106,10 +119,19 @@ export QUARK_RELEASE=1
 %pyproject_save_files -l %{import_name}
 
 %check
-# Importing quark pulls in torch and the heavy ONNX stack; a plain import check
-# is reasonable once those deps are confirmed present in the build root.
-# TODO: enable the pyproject import-check macro for the quark package after
-# verifying onnx (>=1.21,<=1.22) and torch resolve in the build root.
+# No import check runs here, and torch is deliberately NOT a BuildRequires. torch
+# is a hard runtime dependency of quark.torch (the path vLLM uses), but quark's
+# setup.py keys two things on `import torch` succeeding, with no override:
+#   * the optional _C extension is compiled (making the wheel arch-ful and pulling
+#     in ONNX Runtime headers), and
+#   * an accelerator suffix is appended to the version -- even under QUARK_RELEASE
+#     the release version is version.txt + <accel>, so a build-env torch yields
+#     0.12.post1+rocm70.torch2.12 instead of 0.12.post1.
+# Because BuildRequires are present for the whole build (not just %%check), adding
+# torch would break both the pure-Python nature and vLLM's exact
+# amd-quark==0.12.post1 pin. RPM has no check-only dependency phase, so an import
+# test (which needs torch) is left out; the wheel this ships is byte-for-byte the
+# pure-Python one AMD publishes and tests upstream.
 
 %files -n python3-%{pypi_name} -f %{pyproject_files}
 %license LICENSE
