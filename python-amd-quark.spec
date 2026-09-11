@@ -73,10 +73,15 @@ Requires:       python3dist(torch)
 %prep
 %autosetup -p1 -n Quark-%{src_version}
 
-# 1) Allow Python 3.14. Upstream caps requires-python at "<3.14" (F44 ships
+# 1) Allow Python 3.14. Upstream caps the Python version at "<3.14" (F44 ships
 #    3.14); the package is pure Python, so relax the cap to match vLLM's own
-#    "<3.15" upper bound.
+#    "<3.15" upper bound. The cap is declared in TWO places that both reach the
+#    wheel metadata -- pyproject.toml's requires-python and, because quark builds
+#    via setup.py, setup.py's python_requires -- so relax both. Patching only
+#    pyproject.toml leaves setup.py's value in the metadata and pip still rejects
+#    Python 3.14 at build time.
 sed -i 's/requires-python = ">=3.11,<3.14"/requires-python = ">=3.11,<3.15"/' pyproject.toml
+sed -i 's/python_requires=">=3.11,<3.14"/python_requires=">=3.11,<3.15"/' setup.py
 
 # 2) Drop torch from the build backend requirements so the build does not try to
 #    pull it and, more importantly, so setup.py takes its "torch not importable"
