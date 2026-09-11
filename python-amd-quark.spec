@@ -1,10 +1,16 @@
 %global pypi_name amd-quark
 # Upstream import package is "quark" (not "amd_quark").
 %global import_name quark
-# The GitHub source tag is v0.12; the tagged tree's quark/version.txt already
-# reads "0.12.post1", so the built wheel reports the exact version vLLM pins
-# (amd-quark==0.12.post1) with no version patching needed. The source tarball
-# unpacks to quark-0.12.
+# The GitHub source tag is v0.12; the tagged tree's quark/version.txt reads
+# "0.12.post1". That base version reaches the wheel unchanged ONLY on a release
+# build: setup.py's get_version() returns the version.txt string verbatim when
+# QUARK_RELEASE is truthy, but otherwise appends a "+<git-hash>" local segment
+# (from `git rev-parse`, which yields "unknown" on this .git-less tarball). Both
+# the local segment and any accelerator suffix would break vLLM's exact pin
+# (amd-quark==0.12.post1), so the build below exports QUARK_RELEASE=1 and keeps
+# torch out of the build environment (an accelerator suffix like "+rocm70.torchX"
+# is added only when torch is importable). The source tarball unpacks to
+# quark-0.12.
 %global src_version 0.12
 
 Name:           python-%{pypi_name}
@@ -35,6 +41,11 @@ BuildArch:      noarch
 BuildRequires:  python3-devel
 BuildRequires:  python3dist(setuptools) >= 61
 BuildRequires:  python3dist(wheel)
+# setup.py unconditionally shells out to `git rev-parse` (for version.py's
+# git_version stamp) even on a release build; on this .git-less tarball that
+# exits non-zero and is caught, but the git binary must exist or it raises
+# FileNotFoundError and aborts.
+BuildRequires:  git-core
 
 %global desc %{expand:
 AMD Quark is a cross-platform quantization toolkit for deep learning models,
@@ -73,15 +84,24 @@ sed -i 's/requires-python = ">=3.11,<3.14"/requires-python = ">=3.11,<3.15"/' py
 #    pure-Python wheel AMD publishes. (torch is still a runtime Requires above.)
 sed -i '/^\s*"torch>=2\.2\.0",\s*$/d' pyproject.toml
 
+# QUARK_RELEASE=1 makes setup.py's get_version() emit version.txt verbatim
+# (0.12.post1) instead of appending a "+<git-hash>" local segment. It must be set
+# for every phase that runs setup.py -- metadata generation, the wheel build, and
+# save-files (which reads the installed dist-info) -- so the version is consistent
+# throughout. rpm's %%global cannot export a shell variable, so it is exported in
+# each section.
 %generate_buildrequires
+export QUARK_RELEASE=1
 # With torch stripped from the build backend requirements, this installs only the
 # runtime/build deps needed to produce the pure-Python wheel.
 %pyproject_buildrequires
 
 %build
+export QUARK_RELEASE=1
 %pyproject_wheel
 
 %install
+export QUARK_RELEASE=1
 %pyproject_install
 %pyproject_save_files -l %{import_name}
 
