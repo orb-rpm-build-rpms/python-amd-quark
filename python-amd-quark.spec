@@ -71,7 +71,7 @@ Requires:       python3dist(torch)
 %{desc}
 
 %prep
-%autosetup -p1 -n %{import_name}-%{src_version}
+%autosetup -p1 -n Quark-%{src_version}
 
 # 1) Allow Python 3.14. Upstream caps requires-python at "<3.14" (F44 ships
 #    3.14); the package is pure Python, so relax the cap to match vLLM's own
