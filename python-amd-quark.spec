@@ -139,6 +139,7 @@ export QUARK_RELEASE=1
 # pure-Python one AMD publishes and tests upstream.
 
 %files -n python3-%{pypi_name} -f %{pyproject_files}
+%{_bindir}/quark-cli
 %license LICENSE
 %doc README.md
 
